@@ -2,9 +2,13 @@
    Copyright 2015, Gregory Dymarek  gregd72002@gmail.com
  */
 
+//#define DEBUG_COMMUNICATION
+#define DEBUG_MPU
+//#define DEBUG_MPU2
+#define DEBUG_MISC
 
 #include "Arduino.h"
-#ifdef DEBUG
+#ifdef DEBUG_MISC
 #include "freeram.h"
 #endif
 
@@ -84,7 +88,7 @@ unsigned long failsafeStart = 0;
 float accel_crash_detector = 0.f;
 
 uint8_t loop_count = 0;
-#ifdef DEBUG
+#ifdef DEBUG_MPU2
 unsigned int c = 0; //cumulative number of successful MPU/DMP reads
 unsigned int np = 0; //cumulative number of MPU/DMP reads that brought no packet back
 unsigned int err_c = 0; //cumulative number of MPU/DMP reads that brought corrupted packet
@@ -171,15 +175,14 @@ void initAVR() {
 void setup() {
 	Fastwire::setup(400,0);
 
-#ifdef DEBUG
+#if defined(DEBUG_MPU) || defined(DEBUG_COMMUNICATION) || defined(DEBUG_MISC)
 	Serial.begin(115200);
 #endif
 	SPI.setDataMode(SPI_MODE0);
 	pinMode(MISO,OUTPUT);
 	SPCR |= _BV(SPE);
 	SPI.attachInterrupt(); //alternatively:SPCR |= _BV(SPIE);
-#ifdef DEBUG
-	Serial.print("MPU init: "); Serial.println(ret);
+#ifdef DEBUG_MISC
 	Serial.print("Free mem: "); Serial.println(freeRam());
 #endif
 }
@@ -210,7 +213,7 @@ inline void process_command() {
 		t = packet[0];
 		v = packet[2] << 8 | packet[1];
 		switch(t) {
-#ifdef DEBUG
+#ifdef DEBUG_COMMUNICATION
 			case 0: Serial.println("Received packet 0! Check your SPI connection!"); //this usually happens by default when SPI wiring is not right
 				break;
 #endif
@@ -338,7 +341,7 @@ inline void process_command() {
 				  }
 				  break;
 			default: 
-#ifdef DEBUG
+#ifdef DEBUG_COMMUNICATION
 				  byte c = packet[3];
 				  Serial.print("Unknown command: "); Serial.print(t); Serial.print(" "); Serial.print(v); Serial.print(" "); Serial.println(c);
 #endif
@@ -409,7 +412,7 @@ void log_motor() {
 		sendPacket(8+i,motor[(motor_order >> (i*2)) & 0x3]);
 }
 
-
+#ifdef DEBUG_MPU
 void log_debug() {
 	if (log_mode==1) log_accel(); 
 	if (!(loop_count%25)) {
@@ -417,11 +420,12 @@ void log_debug() {
 		Serial.println();
 	}
 }
+#endif
 
 void log() {
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 	log_debug();
-#else
+#endif
 	switch(log_mode) {
 		case 0: break;
 
@@ -456,15 +460,15 @@ void log() {
 				log_altitude();
 #endif
 			break;
+#ifdef ALTHOLD
 		case 100: 
 			if ((loop_count%10)==0)  //200Hz so 10times a sec... -> every 50ms
 				log_accel_pid();
 			break;
-
+#endif
 
 		default: break;
 	};
-#endif
 }
 
 unsigned long p_millis = 0;
@@ -660,7 +664,7 @@ void controller_loop() {
 #ifdef MPU9150
 	ret = mympu_update_compass();
 	if (ret < 0) {
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 		Serial.print("Error reading compass: "); Serial.println(ret);
 #endif
 	}
@@ -668,7 +672,7 @@ void controller_loop() {
 	ret = mympu_update();
 	if (ret == 1) return;
 	if (ret < 0) {
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 		Serial.print("mympu_update: "); Serial.println(ret);
 #endif
 		motor_idle();
@@ -676,7 +680,7 @@ void controller_loop() {
 		code = ret;
 		return;
 	}
-#ifdef DEBUG
+#ifdef DEBUG_MPU2
 	switch (ret) {
 		case 0: c++; break;
 		case 1: np++; return; 
@@ -690,10 +694,10 @@ void controller_loop() {
 	loop_ms = millis() - p_millis;
 	loop_s = (float)(loop_ms)/1000.0f;
 	p_millis = millis();
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 	if (loop_ms>50) 
 #else
-		if (loop_ms>10) 
+	if (loop_ms>10)
 #endif
 		{
 			code = 1;
@@ -743,7 +747,7 @@ int8_t gyroCal() {
 	}
 	ret = mympu_update();
 	if (ret!=0) {
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 		if (ret!=1) { Serial.print("MPU error! "); Serial.println(ret); }
 #endif
 		return -1;
@@ -756,7 +760,7 @@ int8_t gyroCal() {
 	}
 	if (mympu.gyro[0]>-1.0f && mympu.gyro[1]>-1.0f && mympu.gyro[2]>-1.0f &&    
 			mympu.gyro[0]<1.0f && mympu.gyro[1]<1.0f && mympu.gyro[2]<1.0f) {
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 		Serial.println("Gyro calibration ok.");
 #endif
 		mympu.gravity = accel / (c-20);
@@ -773,7 +777,9 @@ void loop() {
 		status = 1;
 		sendPacket(255,status); 
 	}
-
+#ifdef DEBUG_MISC
+		Serial.println("Waiting for configuration from client...");
+#endif
 	//status = 2 set by client 
 
 	switch (status) {
@@ -782,7 +788,7 @@ void loop() {
 			status = 3;
 			break;
 		case 3: 
-#ifdef DEBUG
+#ifdef DEBUG_MPU
 			ret = mympu_open(mpu_addr,50,gyro_orientation);
 #else
 			ret = mympu_open(mpu_addr,200,gyro_orientation);
@@ -791,6 +797,9 @@ void loop() {
 			if (ret == 0) { 
 				status = 4;
 				mympu_reset_fifo();
+#ifdef DEBUG_MPU
+				Serial.println("Start gyrocal...");
+#endif
 			}
 			break;
 		case 4:
