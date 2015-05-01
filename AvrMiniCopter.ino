@@ -447,6 +447,7 @@ void log() {
 			if ((loop_count%20)==0)  //200Hz so 10times a sec... -> every 100ms
 				log_altitude();
 			break;
+#endif
 		case 5: 
 			if ((loop_count%20)==0) //200Hz -> every 50ms
 				log_ypr();
@@ -460,7 +461,6 @@ void log() {
 				log_accel_pid();
 			break;
 
-#endif
 
 		default: break;
 	};
