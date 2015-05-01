@@ -113,6 +113,9 @@ byte packet[4];
 
 int yprt[4] = {0,0,0,0};
 
+#define SWITCH_PIN 7
+#define LED_PIN 8
+
 void motor_idle() {
 	alt_hold = 0;
 	yprt[3] = motor_pwm[0];
@@ -172,6 +175,14 @@ void initAVR() {
 	vz = 0.f;
 }
 
+bool loadConfig() {
+	return false;
+}
+
+void saveConfig() {
+
+}
+
 void setup() {
 	Fastwire::setup(400,0);
 
@@ -182,6 +193,14 @@ void setup() {
 	pinMode(MISO,OUTPUT);
 	SPCR |= _BV(SPE);
 	SPI.attachInterrupt(); //alternatively:SPCR |= _BV(SPIE);
+
+#ifdef LED_PIN
+	pinMode(LED_PIN, OUTPUT);
+#endif
+#ifdef SWITCH_PIN
+	pinMode(SWITCH_PIN, INPUT);
+#endif
+
 #ifdef DEBUG_MISC
 	Serial.print("Free mem: "); Serial.println(freeRam());
 #endif
@@ -745,10 +764,23 @@ int8_t gyroCal() {
 		status=255;
 		return -1;
 	}
+
+#ifdef LED_PIN
+	static int blink = 0;
+	if (loop_c % 1000 == 0) {
+
+		blink = !blink;
+		digitalWrite(LED_PIN, blink ? HIGH : LOW);
+	}
+#endif
+
 	ret = mympu_update();
 	if (ret!=0) {
 #ifdef DEBUG_MPU
 		if (ret!=1) { Serial.print("MPU error! "); Serial.println(ret); }
+#endif
+#ifdef LED_PIN
+		if (ret!=1) { digitalWrite(LED_PIN, LOW); }
 #endif
 		return -1;
 	}
@@ -764,6 +796,9 @@ int8_t gyroCal() {
 		Serial.println("Gyro calibration ok.");
 #endif
 		mympu.gravity = accel / (c-20);
+#ifdef LED_PIN
+		digitalWrite(LED_PIN, HIGH);
+#endif
 		return 0;
 	}
 	return -1;
@@ -774,12 +809,19 @@ void loop() {
 
 	if (status==0) {
 		initAVR();
-		status = 1;
-		sendPacket(255,status); 
-	}
+#ifdef SWITCH_PIN
+		if (digitalRead(SWITCH_PIN) == LOW && loadConfig()) {
+			status = 2;
+		} else {
 #ifdef DEBUG_MISC
-		Serial.println("Waiting for configuration from client...");
+			Serial.println("Waiting for configuration from client...");
 #endif
+			status = 1;
+		}
+#endif
+		sendPacket(255,status);
+	}
+
 	//status = 2 set by client 
 
 	switch (status) {
